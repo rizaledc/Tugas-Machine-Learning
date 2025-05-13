@@ -1,21 +1,22 @@
-# train_model.py
+# Main module for training the disaster image classification model.
+
 import tensorflow as tf
 import logging
 import os
-import matplotlib.pyplot as plt # Untuk plotting (opsional)
+import matplotlib.pyplot as plt # For plotting training history
 
-# Impor modul lokal
+# Import local modules
 import config
 from data_loader import get_data_generators
 from model_builder import create_cnn_model
 
-# Setup logging dasar
+# Setup basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def plot_training_history(history, save_path_base):
-    """Membuat plot akurasi dan loss dari history pelatihan."""
+    """Plots and saves the training and validation accuracy and loss."""
     try:
-        # Plot Akurasi
+        # Plot Accuracy
         plt.figure(figsize=(12, 4))
         plt.subplot(1, 2, 1)
         plt.plot(history.history['accuracy'], label='Training Accuracy')
@@ -27,8 +28,8 @@ def plot_training_history(history, save_path_base):
         plt.grid(True)
         acc_plot_path = os.path.join(save_path_base, "training_accuracy_plot.png")
         plt.savefig(acc_plot_path)
-        logging.info(f"Plot akurasi disimpan di: {acc_plot_path}")
-        plt.close() # Tutup plot agar tidak ditampilkan jika dijalankan di server
+        logging.info(f"Accuracy plot saved to: {acc_plot_path}")
+        plt.close()
 
         # Plot Loss
         plt.figure(figsize=(12, 4))
@@ -42,113 +43,100 @@ def plot_training_history(history, save_path_base):
         plt.grid(True)
         loss_plot_path = os.path.join(save_path_base, "training_loss_plot.png")
         plt.savefig(loss_plot_path)
-        logging.info(f"Plot loss disimpan di: {loss_plot_path}")
+        logging.info(f"Loss plot saved to: {loss_plot_path}")
         plt.close()
     except Exception as e:
-        logging.warning(f"Gagal membuat plot histori pelatihan: {e}")
-
-
-# train_model.py
-
-# ... (impor dan kode lainnya) ...
+        logging.warning(f"Failed to generate or save training history plots: {e}")
 
 def train():
-    """Fungsi utama untuk melatih model deteksi bencana."""
-    logging.info("Memulai proses pelatihan model...")
+    """Main function to train the disaster detection model."""
+    logging.info("Starting model training process...")
 
-    # 1. Muat Dataset
-    logging.info("Memuat dataset...")
-    # PERBAIKI BARIS INI:
-    # train_ds, val_ds, test_ds = get_data_generators() # BARIS LAMA YANG SALAH
-    train_ds, val_ds, test_ds, class_names = get_data_generators() # BARIS BARU YANG BENAR
+    # 1. Load Dataset
+    logging.info("Loading datasets...")
+    train_ds, val_ds, test_ds, class_names = get_data_generators()
 
     if not train_ds or not val_ds:
-        logging.error("Dataset training atau validasi tidak berhasil dimuat. Proses pelatihan dihentikan.")
+        logging.error("Training or validation dataset could not be loaded. Training aborted.")
         return
-    
-    # Jika Anda ingin memastikan class_names juga termuat:
-    if not class_names:
-        logging.warning("Nama kelas tidak berhasil dimuat dari data_loader. Mungkin akan ada masalah jika nama kelas diperlukan nanti.")
+
+    if class_names:
+        logging.info(f"Loaded class names: {class_names}")
     else:
-        logging.info(f"Nama kelas yang berhasil dimuat: {class_names}")
+        logging.warning("Class names could not be loaded from data_loader.")
 
-
-    # 2. Buat Model
-    # ... (sisa kode fungsi train() tetap sama) ...
-
-    # 2. Buat Model
-    logging.info("Membuat model CNN...")
+    # 2. Build Model
+    logging.info("Creating CNN model...")
     model = create_cnn_model()
     if not model:
-        logging.error("Gagal membuat model. Proses pelatihan dihentikan.")
+        logging.error("Failed to create the model. Training aborted.")
         return
 
-    # 3. Definisikan Callbacks (Opsional tapi sangat direkomendasikan)
+    # 3. Define Callbacks
     callbacks = []
 
-    # EarlyStopping: Menghentikan pelatihan jika tidak ada peningkatan
+    # EarlyStopping: Stop training when a monitored metric has stopped improving
     early_stopping_cb = tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss',       # Metrik yang dipantau
-        patience=5,               # Jumlah epoch tanpa peningkatan sebelum berhenti
+        monitor='val_loss',      # Metric to monitor
+        patience=5,              # Number of epochs with no improvement
         verbose=1,
-        restore_best_weights=True # Kembalikan bobot terbaik saat berhenti
+        restore_best_weights=True # Restore model weights from the epoch with the best value of the monitored metric
     )
     callbacks.append(early_stopping_cb)
 
-    # ModelCheckpoint: Menyimpan model terbaik selama pelatihan
-    # Pastikan direktori penyimpanan model ada (sudah di config.py)
+    # ModelCheckpoint: Save the best model during training
+    # The directory for saving models is created in config.py
     checkpoint_filepath = os.path.join(config.MODEL_SAVE_DIR, 'best_model_epoch_{epoch:02d}_val_acc_{val_accuracy:.3f}.keras')
     model_checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
         filepath=checkpoint_filepath,
-        monitor='val_accuracy',
-        mode='max',               # Simpan model dengan val_accuracy tertinggi
-        save_best_only=True,      # Hanya simpan yang terbaik
+        monitor='val_accuracy',  # Monitor validation accuracy
+        mode='max',              # Save model with the highest val_accuracy
+        save_best_only=True,     # Only save the best model
         verbose=1
     )
     callbacks.append(model_checkpoint_cb)
 
-    # ReduceLROnPlateau: Mengurangi learning rate jika progress melambat
+    # ReduceLROnPlateau: Reduce learning rate when a metric has stopped improving
     reduce_lr_cb = tf.keras.callbacks.ReduceLROnPlateau(
         monitor='val_loss',
-        factor=0.2,              # Faktor pengurangan learning rate (new_lr = lr * factor)
+        factor=0.2,              # Factor by which the learning rate will be reduced (new_lr = lr * factor)
         patience=3,
-        min_lr=0.00001,          # Batas bawah learning rate
+        min_lr=0.00001,          # Lower bound on the learning rate
         verbose=1
     )
     callbacks.append(reduce_lr_cb)
 
-    # 4. Latih Model
-    logging.info(f"Memulai pelatihan model untuk {config.EPOCHS} epoch...")
+
+    # 4. Train Model
+    logging.info(f"Starting model training for {config.EPOCHS} epochs...")
     try:
         history = model.fit(
             train_ds,
             epochs=config.EPOCHS,
             validation_data=val_ds,
-            callbacks=callbacks # Gunakan callbacks yang sudah didefinisikan
+            callbacks=callbacks # Use defined callbacks
         )
-        logging.info("Pelatihan model selesai.")
+        logging.info("Model training completed.")
 
-        # 5. Plot histori pelatihan (opsional)
+        # 5. Plot training history
         plot_training_history(history, config.MODEL_SAVE_DIR)
 
-
-        # 6. Evaluasi Model pada data Test (Opsional, tapi baik untuk dilakukan)
+        # 6. Evaluate Model on Test Data (Optional)
         if test_ds:
-            logging.info("Mengevaluasi model pada dataset test...")
+            logging.info("Evaluating model on test dataset...")
             test_loss, test_accuracy = model.evaluate(test_ds, verbose=1)
-            logging.info(f"Hasil Evaluasi Test - Loss: {test_loss:.4f}, Accuracy: {test_accuracy:.4f}")
+            logging.info(f"Test Evaluation Results - Loss: {test_loss:.4f}, Accuracy: {test_accuracy:.4f}")
         else:
-            logging.info("Dataset test tidak tersedia untuk evaluasi akhir.")
+            logging.info("Test dataset not available for final evaluation.")
 
-        # 7. Simpan Model Final
-        # Jika restore_best_weights=True pada EarlyStopping, model sudah memiliki bobot terbaik.
-        # ModelCheckpoint mungkin sudah menyimpan model terbaik secara terpisah.
-        # Penyimpanan ini adalah untuk model pada kondisi akhir pelatihan (atau bobot terbaik jika EarlyStopping aktif).
+        # 7. Save Final Model
+        # If restore_best_weights=True is used, this model will have the best weights.
+        # ModelCheckpoint saves the best model separately.
         model.save(config.MODEL_SAVE_PATH)
-        logging.info(f"Model final berhasil disimpan di: {config.MODEL_SAVE_PATH}")
+        logging.info(f"Final model saved to: {config.MODEL_SAVE_PATH}")
 
     except Exception as e:
-        logging.error(f"Terjadi kesalahan selama proses pelatihan: {e}", exc_info=True)
+        logging.error(f"An error occurred during training: {e}", exc_info=True)
 
 if __name__ == "__main__":
     train()
