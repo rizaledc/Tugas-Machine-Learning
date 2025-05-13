@@ -1,0 +1,21 @@
+# Python bytecode files
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Dataset (misalnya, gambar atau data pelatihan yang besar)
+DisasterModel_Raw/
+DisasterModel_Split/
+
+# Model files (jika ingin mengecualikan model yang sudah dilatih)
+saved_models/
+*.keras
+*.h5
+
+# Log files
+logs/
+
+# Virtual environment
+venv/
+.env/
