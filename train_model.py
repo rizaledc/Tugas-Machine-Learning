@@ -1,154 +1,202 @@
-# train_model.py
+# Main module for training the disaster image classification model with Fine-tuning.
+
 import tensorflow as tf
 import logging
 import os
-import matplotlib.pyplot as plt # Untuk plotting (opsional)
+import matplotlib.pyplot as plt
 
-# Impor modul lokal
+# Import local modules
 import config
 from data_loader import get_data_generators
-from model_builder import create_cnn_model
+from model_builder import create_cnn_model # Ini sekarang memanggil build_augmented_transfer_model
 
-# Setup logging dasar
+# Setup basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def plot_training_history(history, save_path_base):
-    """Membuat plot akurasi dan loss dari history pelatihan."""
-    try:
-        # Plot Akurasi
-        plt.figure(figsize=(12, 4))
-        plt.subplot(1, 2, 1)
-        plt.plot(history.history['accuracy'], label='Training Accuracy')
-        plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
-        plt.title('Training and Validation Accuracy')
-        plt.xlabel('Epoch')
-        plt.ylabel('Accuracy')
-        plt.legend()
-        plt.grid(True)
-        acc_plot_path = os.path.join(save_path_base, "training_accuracy_plot.png")
-        plt.savefig(acc_plot_path)
-        logging.info(f"Plot akurasi disimpan di: {acc_plot_path}")
-        plt.close() # Tutup plot agar tidak ditampilkan jika dijalankan di server
-
-        # Plot Loss
-        plt.figure(figsize=(12, 4))
-        plt.subplot(1, 2, 2)
-        plt.plot(history.history['loss'], label='Training Loss')
-        plt.plot(history.history['val_loss'], label='Validation Loss')
-        plt.title('Training and Validation Loss')
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.legend()
-        plt.grid(True)
-        loss_plot_path = os.path.join(save_path_base, "training_loss_plot.png")
-        plt.savefig(loss_plot_path)
-        logging.info(f"Plot loss disimpan di: {loss_plot_path}")
-        plt.close()
-    except Exception as e:
-        logging.warning(f"Gagal membuat plot histori pelatihan: {e}")
-
-
-# train_model.py
-
-# ... (impor dan kode lainnya) ...
+# ... (fungsi plot_training_history tetap sama) ...
 
 def train():
-    """Fungsi utama untuk melatih model deteksi bencana."""
-    logging.info("Memulai proses pelatihan model...")
+    """Main function to train the disaster detection model, including fine-tuning."""
+    logging.info("Starting model training process...")
 
-    # 1. Muat Dataset
-    logging.info("Memuat dataset...")
-    # PERBAIKI BARIS INI:
-    # train_ds, val_ds, test_ds = get_data_generators() # BARIS LAMA YANG SALAH
-    train_ds, val_ds, test_ds, class_names = get_data_generators() # BARIS BARU YANG BENAR
+    # 1. Load Dataset
+    logging.info("Loading datasets...")
+    train_ds, val_ds, test_ds, class_names = get_data_generators()
 
     if not train_ds or not val_ds:
-        logging.error("Dataset training atau validasi tidak berhasil dimuat. Proses pelatihan dihentikan.")
+        logging.error("Training or validation dataset could not be loaded. Training aborted.")
         return
-    
-    # Jika Anda ingin memastikan class_names juga termuat:
-    if not class_names:
-        logging.warning("Nama kelas tidak berhasil dimuat dari data_loader. Mungkin akan ada masalah jika nama kelas diperlukan nanti.")
+
+    if class_names:
+        logging.info(f"Loaded class names: {class_names}")
     else:
-        logging.info(f"Nama kelas yang berhasil dimuat: {class_names}")
+        logging.warning("Class names could not be loaded from data_loader.")
 
+    # 2. Build Base Model (Head is trainable, Base is frozen initially)
+    logging.info("Creating Augmented Transfer Learning model...")
+    model = create_cnn_model() # Ini memanggil build_augmented_transfer_model
 
-    # 2. Buat Model
-    # ... (sisa kode fungsi train() tetap sama) ...
-
-    # 2. Buat Model
-    logging.info("Membuat model CNN...")
-    model = create_cnn_model()
     if not model:
-        logging.error("Gagal membuat model. Proses pelatihan dihentikan.")
+        logging.error("Failed to create the model. Training aborted.")
         return
 
-    # 3. Definisikan Callbacks (Opsional tapi sangat direkomendasikan)
+    # Define Callbacks (tetap sama, akan digunakan di kedua fase)
     callbacks = []
 
-    # EarlyStopping: Menghentikan pelatihan jika tidak ada peningkatan
     early_stopping_cb = tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss',       # Metrik yang dipantau
-        patience=5,               # Jumlah epoch tanpa peningkatan sebelum berhenti
+        monitor='val_loss',
+        patience=5,
         verbose=1,
-        restore_best_weights=True # Kembalikan bobot terbaik saat berhenti
+        restore_best_weights=True # Penting untuk mengambil bobot terbaik
     )
     callbacks.append(early_stopping_cb)
 
-    # ModelCheckpoint: Menyimpan model terbaik selama pelatihan
-    # Pastikan direktori penyimpanan model ada (sudah di config.py)
-    checkpoint_filepath = os.path.join(config.MODEL_SAVE_DIR, 'best_model_epoch_{epoch:02d}_val_acc_{val_accuracy:.3f}.keras')
-    model_checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
-        filepath=checkpoint_filepath,
+    # Checkpoint untuk fase pelatihan awal (frozen base)
+    checkpoint_filepath_frozen = os.path.join(config.MODEL_SAVE_DIR, 'best_model_frozen_base_epoch_{epoch:02d}_val_acc_{val_accuracy:.3f}.keras')
+    model_checkpoint_cb_frozen = tf.keras.callbacks.ModelCheckpoint(
+        filepath=checkpoint_filepath_frozen,
         monitor='val_accuracy',
-        mode='max',               # Simpan model dengan val_accuracy tertinggi
-        save_best_only=True,      # Hanya simpan yang terbaik
+        mode='max',
+        save_best_only=True,
         verbose=1
     )
-    callbacks.append(model_checkpoint_cb)
+    callbacks.append(model_checkpoint_cb_frozen)
 
-    # ReduceLROnPlateau: Mengurangi learning rate jika progress melambat
     reduce_lr_cb = tf.keras.callbacks.ReduceLROnPlateau(
         monitor='val_loss',
-        factor=0.2,              # Faktor pengurangan learning rate (new_lr = lr * factor)
+        factor=0.2,
         patience=3,
-        min_lr=0.00001,          # Batas bawah learning rate
+        min_lr=0.000001, # Turunkan batas bawah learning rate untuk fine-tuning
         verbose=1
     )
     callbacks.append(reduce_lr_cb)
 
-    # 4. Latih Model
-    logging.info(f"Memulai pelatihan model untuk {config.EPOCHS} epoch...")
+
+    # --- Fase 1: Latih Hanya Lapisan Klasifikasi Baru (Base Frozen) ---
+    logging.info(f"Starting training phase 1: Training classification head for {config.EPOCHS} epochs (Base frozen)...")
+
     try:
-        history = model.fit(
+        history_frozen = model.fit(
             train_ds,
-            epochs=config.EPOCHS,
+            epochs=config.EPOCHS, # Gunakan epoch dari config
             validation_data=val_ds,
-            callbacks=callbacks # Gunakan callbacks yang sudah didefinisikan
+            callbacks=callbacks # Gunakan callbacks yang sama
         )
-        logging.info("Pelatihan model selesai.")
-
-        # 5. Plot histori pelatihan (opsional)
-        plot_training_history(history, config.MODEL_SAVE_DIR)
-
-
-        # 6. Evaluasi Model pada data Test (Opsional, tapi baik untuk dilakukan)
-        if test_ds:
-            logging.info("Mengevaluasi model pada dataset test...")
-            test_loss, test_accuracy = model.evaluate(test_ds, verbose=1)
-            logging.info(f"Hasil Evaluasi Test - Loss: {test_loss:.4f}, Accuracy: {test_accuracy:.4f}")
-        else:
-            logging.info("Dataset test tidak tersedia untuk evaluasi akhir.")
-
-        # 7. Simpan Model Final
-        # Jika restore_best_weights=True pada EarlyStopping, model sudah memiliki bobot terbaik.
-        # ModelCheckpoint mungkin sudah menyimpan model terbaik secara terpisah.
-        # Penyimpanan ini adalah untuk model pada kondisi akhir pelatihan (atau bobot terbaik jika EarlyStopping aktif).
-        model.save(config.MODEL_SAVE_PATH)
-        logging.info(f"Model final berhasil disimpan di: {config.MODEL_SAVE_PATH}")
+        logging.info("Phase 1 training completed.")
 
     except Exception as e:
-        logging.error(f"Terjadi kesalahan selama proses pelatihan: {e}", exc_info=True)
+        logging.error(f"An error occurred during Phase 1 training: {e}", exc_info=True)
+        return # Berhenti jika Fase 1 gagal
+
+
+    # --- Fase 2: Fine-tuning (Unfreeze Top Layers of Base Model) ---
+    logging.info("\nStarting training phase 2: Fine-tuning the model (Unfreezing base layers)...")
+
+    # Unfreeze the base model (or a portion of it)
+    base_model = model.get_layer("mobilenetv2_1.00_224") # Dapatkan layer MobileNetV2 berdasarkan namanya di model_builder
+
+    # Berapa banyak layer yang ingin Anda unfreeze dari akhir base model?
+    # Lebih sedikit layer diunfreeze = lebih aman dari overfitting tapi potensial improvement lebih kecil.
+    # Seluruh base model diunfreeze = potensial improvement lebih besar tapi risiko overfitting lebih tinggi.
+    # MobileNetV2 punya ~150-200 layer tergantung versi. Contoh: unfreeze 20 layer terakhir.
+    fine_tune_from_layer = -20 # Ganti angka ini sesuai eksperimen Anda
+
+    logging.info(f"Unfreezing the last {abs(fine_tune_from_layer)} layers of the base model for fine-tuning.")
+
+    base_model.trainable = True
+    for layer in base_model.layers[:fine_tune_from_layer]:
+        layer.trainable = False # Bekukan lapisan di awal base model
+
+    # Re-compile the model for fine-tuning
+    # Penting: Gunakan learning rate yang SANGAT RENDAH untuk fine-tuning
+    fine_tune_learning_rate = config.LEARNING_RATE * 0.01 # Contoh: 1/100th dari LR awal
+    fine_tune_optimizer = Adam(learning_rate=fine_tune_learning_rate) # Atau SGD dengan momentum
+
+    model.compile(
+        optimizer=fine_tune_optimizer,
+        loss='categorical_crossentropy',
+        metrics=['accuracy']
+    )
+
+    logging.info(f"Model re-compiled with lower learning rate ({fine_tune_learning_rate}) for fine-tuning.")
+    # Log summary model lagi untuk melihat layer mana yang trainable
+    stringlist = []
+    model.summary(print_fn=lambda x: stringlist.append(x))
+    model_summary_fine_tune = "\n".join(stringlist)
+    logging.info(f"Fine-tuning Model Summary (Trainable Layers):\n{model_summary_fine_tune}")
+
+
+    # Latih lagi seluruh model dengan data_ds *dimulai dari epoch terakhir*
+    total_fine_tune_epochs = config.EPOCHS # Jumlah epoch tambahan untuk fine-tuning
+    initial_epoch = history_frozen.epoch[-1] + 1 # Mulai dari epoch setelah fase 1 selesai
+    total_epochs = initial_epoch + total_fine_tune_epochs # Total epoch keseluruhan
+
+    # Checkpoint untuk fase fine-tuning
+    checkpoint_filepath_finetune = os.path.join(config.MODEL_SAVE_DIR, 'best_model_finetuned_epoch_{epoch:02d}_val_acc_{val_accuracy:.3f}.keras')
+    model_checkpoint_cb_finetune = tf.keras.callbacks.ModelCheckpoint(
+        filepath=checkpoint_filepath_finetune,
+        monitor='val_accuracy',
+        mode='max',
+        save_best_only=True,
+        verbose=1
+    )
+    # Ganti checkpoint di callbacks dengan yang baru untuk fase fine-tuning
+    callbacks_finetune = [cb for cb in callbacks if not isinstance(cb, tf.keras.callbacks.ModelCheckpoint)] # Keep other callbacks
+    callbacks_finetune.append(model_checkpoint_cb_finetune)
+
+
+    logging.info(f"Starting fine-tuning for {total_fine_tune_epochs} additional epochs (Total epochs: {total_epochs})...")
+
+    try:
+        history_finetune = model.fit(
+            train_ds,
+            epochs=total_epochs, # Jalankan hingga total_epochs
+            initial_epoch=initial_epoch, # Mulai dari epoch terakhir fase 1
+            validation_data=val_ds,
+            callbacks=callbacks_finetune # Gunakan callbacks fase fine-tuning
+        )
+        logging.info("Phase 2 (Fine-tuning) training completed.")
+
+        # Gabungkan history untuk plotting
+        history_frozen_dict = history_frozen.history
+        history_finetune_dict = history_finetune.history
+
+        combined_history = {
+            key: history_frozen_dict[key] + history_finetune_dict[key]
+            for key in history_frozen_dict.keys()
+        }
+        # 5. Plot histori pelatihan gabungan
+        plot_training_history(type('obj', (object,), {'history': combined_history}), config.MODEL_SAVE_DIR)
+
+
+    except Exception as e:
+        logging.error(f"An error occurred during Phase 2 (Fine-tuning) training: {e}", exc_info=True)
+        # Lanjutkan ke evaluasi meskipun fine-tuning gagal? Tergantung kebutuhan.
+        # Untuk saat ini, biarkan lanjut tapi model mungkin bukan yang terbaik.
+
+
+    # 6. Evaluasi Model pada data Test (Opsional)
+    # Model terbaik dari fase 1 atau fase 2 akan dimuat secara otomatis oleh restore_best_weights
+    # jika EarlyStopping dipicu, atau Anda bisa memuat file checkpoint terbaik secara manual.
+    if test_ds:
+        logging.info("Mengevaluasi model final pada dataset test...")
+        try:
+            test_loss, test_accuracy = model.evaluate(test_ds, verbose=1)
+            logging.info(f"Hasil Evaluasi Test Final - Loss: {test_loss:.4f}, Accuracy: {test_accuracy:.4f}")
+        except Exception as e:
+             logging.error(f"An error occurred during final test evaluation: {e}", exc_info=True)
+
+    else:
+        logging.info("Dataset test tidak tersedia untuk evaluasi akhir.")
+
+    # 7. Simpan Model Final (model saat ini sudah memiliki bobot terbaik jika restore_best_weights aktif)
+    # Anda juga bisa memuat file checkpoint terbaik secara eksplisit di sini jika ingin yakin.
+    try:
+        model.save(config.MODEL_SAVE_PATH)
+        logging.info(f"Model final berhasil disimpan di: {config.MODEL_SAVE_PATH}")
+    except Exception as e:
+        logging.error(f"Failed to save final model to {config.MODEL_SAVE_PATH}: {e}", exc_info=True)
+
 
 if __name__ == "__main__":
     train()
