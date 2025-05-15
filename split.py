@@ -1,3 +1,4 @@
+#split.py
 import os
 import shutil
 import random
@@ -9,7 +10,7 @@ TARGET_DIR = SOURCE_DIR  # Simpan hasil di folder yang sama
 
 CLASSES = ["Cyclone", "Earthquake", "Flood", "Wildfire"]
 SPLITS = ["train", "validation", "test"]
-SPLIT_RATIOS = (0.7, 0.2, 0.1)  # 70% train, 20% val, 10% test
+SPLIT_RATIOS = (0.8, 0.1, 0.1)  # Rasio pembagian untuk train, validation, dan test
 
 def make_dirs():
     for split in SPLITS:

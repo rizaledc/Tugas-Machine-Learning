@@ -36,6 +36,6 @@ def create_datasets(data_dir, img_size=(224, 224), batch_size=32, val_split=0.2,
     return train_ds, val_ds
 
 if __name__ == "__main__":
-    data_dir = "C:/Machine Learning/DisasterModel"  # Ganti dengan folder dataset
+    data_dir = "C:/Disaster-CNN-Models/DisasterModel"  # Ganti dengan folder dataset
     train_ds, val_ds = create_datasets(data_dir)
     print("Train and validation datasets loaded successfully.")

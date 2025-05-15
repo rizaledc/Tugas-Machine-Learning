@@ -2,7 +2,7 @@ import tensorflow as tf
 import os
 
 # Path dasar ke dataset
-base_dir = "DisasterModel/Cyclone_Wildfire_Flood_Earthquake_Dataset"
+base_dir = "C:/Disaster-CNN-Models/DisasterModel/Cyclone_Wildfire_Flood_Earthquake_Dataset"
 
 # Path ke folder train, test, dan validation
 train_dir = os.path.join(base_dir, "train")
@@ -14,7 +14,7 @@ img_height = 224
 img_width = 224
 batch_size = 32
 
-# Load dataset
+# Load dataset menggunakan image_dataset_from_directory
 train_ds = tf.keras.utils.image_dataset_from_directory(
     train_dir,
     seed=123,

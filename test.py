@@ -1,3 +1,5 @@
+# test.py
+
 import os
 import numpy as np
 import tensorflow as tf
@@ -53,8 +55,8 @@ class ModelTester:
         print(confusion_matrix(y_true, y_pred))
 
 def main():
-    MODEL_PATH = r"C:\Machine Learning\disaster_cnn_model.h5"
-    TEST_DIR   = r"C:\Machine Learning\DisasterModel\Cyclone_Wildfire_Flood_Earthquake_Dataset\test"
+    MODEL_PATH = r"C:\Disaster-CNN-Models\best_model.keras"
+    TEST_DIR   = r"C:\Disaster-CNN-Models\DisasterModel\Cyclone_Wildfire_Flood_Earthquake_Dataset\test"
 
     tester = ModelTester(model_path=MODEL_PATH, test_dir=TEST_DIR)
     tester.load_model()
